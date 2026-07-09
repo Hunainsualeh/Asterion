@@ -1,0 +1,160 @@
+# Per-agent model routing — the single place agent→model assignments live.
+#
+# Format is standard LiteLLM proxy config (model_list + router_settings), so
+# this exact file can later be served by a self-hosted LiteLLM gateway with
+# `litellm --config litellm_config.yaml`. Until then, app/llm/routing.py
+# parses the same file in-process and app/llm/groq_client.py provides the
+# per-key/per-model rate-limit rotation the proxy would otherwise handle.
+#
+# DELIBERATELY GROQ-ONLY. The user's model choice in Settings › Models is an
+# *override* applied on top of this file at runtime (app/llm/selection.py): it
+# is prepended to every agent's chain, and everything below stays behind it as
+# fallbacks. That is what makes selecting DeepSeek safe — when DeepSeek 402s on
+# an unpaid account, the run continues down this chain instead of dying.
+# Adding a `deepseek/...` alias to model_list would defeat that, and would also
+# make the model a *permanent* choice rather than a user-revocable one.
+#
+# All models are Groq-hosted open-source models (Groq hosts nothing
+# proprietary). gpt-oss-120b on Architect/Debugger is the strongest reasoning
+# available under that constraint, not the ceiling of what exists — if their
+# output quality proves too weak, route those two aliases to a paid provider
+# behind this same file rather than forcing everything through Groq.
+#
+# Free-tier limits (approx, per key): 30 RPM / 1,000 RPD on most models;
+# llama-3.1-8b-instant gets 14,400 RPD, which is why the high-frequency
+# agents (build/test/docs) sit on it. llama-4-scout has the highest TPM
+# (30K), which is why long-context research sits on it.
+
+model_list:
+  # --- deep-reasoning tier: wrong calls here are expensive to unwind ---
+  - model_name: architect
+    litellm_params:
+      model: groq/openai/gpt-oss-120b
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+  - model_name: debugger
+    litellm_params:
+      model: groq/openai/gpt-oss-120b
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+
+  # --- mid-tier reasoning: routing, review, structured breakdown ---
+  - model_name: supervisor
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+  - model_name: planner
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+  - model_name: reviewer
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+  - model_name: security
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+  - model_name: scope
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+
+  # --- long-context tier: large diffs / doc dumps over raw reasoning ---
+  - model_name: research
+    litellm_params:
+      model: groq/meta-llama/llama-4-scout-17b-16e-instruct
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+
+  # --- utility tier: emergency fallback with its own separate daily quota,
+  #     for when the 70B/120B daily token caps are exhausted ---
+  - model_name: utility
+    litellm_params:
+      model: groq/openai/gpt-oss-20b
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+
+  # --- task-lane DAG executors (app/dag/workflows.py) ---
+  - model_name: analyze
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+  - model_name: summarize
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+  - model_name: answer
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+  # coder writes whole multi-file apps: it needs room for the plan+design
+  # context AND a long completion in one request. gpt-oss-120b's 8K TPM cap is
+  # smaller than the code step's own max_tokens reserve, so it 413'd on every
+  # call and never actually ran. 70B has the TPM headroom (and better code
+  # quality than scout), with scout/20b as the reliable fallback when 70B's
+  # shared daily cap is spent.
+  - model_name: coder
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+  - model_name: designer
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+
+  # --- high-volume tier: runs constantly, needs the generous daily cap ---
+  - model_name: developer
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+  - model_name: test
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+  - model_name: docs
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
+      api_key: os.environ/GROQ_API_KEY
+      api_base: https://api.groq.com/openai/v1
+
+router_settings:
+  num_retries: 2
+  # Escalation order when a model's whole key pool is rate-limited or it
+  # repeatedly emits malformed tool calls. Chains run deep on purpose: the
+  # free tier's *daily* token caps on 70B/120B genuinely run out under real
+  # load (observed 2026-07-02: 99.5K/100K TPD used on 70B), and a degraded
+  # answer from gpt-oss-20b / llama-4-scout beats a dead pipeline. Quality-
+  # critical agents still start at the strongest model their tier allows.
+  # research (llama-4-scout) sits before utility (gpt-oss-20b) in every deep
+  # chain: scout has the highest TPM ceiling (30K vs 20b's 8K), so it's the
+  # fallback that can actually absorb a long tool-loop transcript.
+  fallbacks:
+    - architect: ["supervisor", "research", "utility"]
+    - debugger: ["supervisor", "research", "utility"]
+    - supervisor: ["architect", "research", "utility"]
+    - planner: ["architect", "research", "utility"]
+    - reviewer: ["architect", "research", "utility"]
+    - security: ["architect", "research", "utility"]
+    - scope: ["architect", "research", "utility"]
+    - research: ["supervisor", "utility"]
+    - analyze: ["research", "utility"]
+    - summarize: ["research", "utility"]
+    - answer: ["research", "utility", "docs"]
+    - coder: ["research", "utility"]
+    - designer: ["architect", "research", "utility"]
+    - developer: ["supervisor", "research", "utility"]
+    - test: ["utility", "supervisor"]
+    - docs: ["utility", "supervisor"]

@@ -1,0 +1,44 @@
+# ---- Core web / API ----
+fastapi
+uvicorn[standard]
+sse-starlette
+httpx
+python-multipart
+
+# ---- Config / models ----
+pydantic
+pydantic-settings
+python-dotenv
+
+# ---- Orchestration ----
+langgraph
+langgraph-checkpoint
+
+# ---- LLM providers ----
+groq                 # Groq SDK (app/llm/groq_client.py)
+#                      DeepSeek needs no SDK: its API is OpenAI-compatible and
+#                      app/llm/deepseek_client.py speaks it over the httpx
+#                      already required above, returning a response shim with
+#                      the same attribute shape the Groq SDK gives back.
+
+# ---- Attachments ----
+pypdf                # extracts text from uploaded PDFs (images use the Groq vision model)
+
+# ---- Task queue / memory ----
+redis
+fakeredis            # in-process fallback when no native Redis is running
+numpy
+
+# ---- Assistant platform (tasks / reminders / scheduling) ----
+tzdata               # IANA timezone db for zoneinfo (Windows has no system copy);
+#                      without it every named tz silently falls back to UTC and
+#                      "tomorrow 9am Karachi" fires 5h late. app/tasks/* need it.
+
+# ---- Model routing / knowledge store ----
+pyyaml               # parses litellm_config.yaml (per-agent model routing)
+# fastembed          # optional semantic embeddings — no Python 3.14 ONNX wheels yet;
+#                      the hashing embedder in app/knowledge/embedder.py is the default
+
+# ---- Test & security stages ----
+pytest               # the automated test stage runs generated repos' suites
+bandit               # Python SAST for the security stage (semgrep needs WSL on Windows)
